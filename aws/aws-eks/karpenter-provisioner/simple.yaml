@@ -1,0 +1,37 @@
+apiVersion: karpenter.sh/v1alpha5
+kind: Provisioner
+metadata:
+  name: simple
+spec:
+  limits:
+    resources:
+      cpu: 2
+      memory: 8Gi
+  provider:
+    apiVersion: extensions.karpenter.sh/v1alpha1
+    kind: AWS
+    securityGroupSelector:
+      karpenter.sh/discovery/${cluster_name}-node: ${cluster_name}
+    subnetSelector:
+      karpenter.sh/discovery: ${cluster_name}
+  requirements:
+  - key: node.kubernetes.io/instance-type
+    operator: In
+    values:
+    - t2.small
+    - t3.small
+    - t2.micro
+  - key: karpenter.sh/capacity-type
+    operator: In
+    values:
+    - on-demand
+  - key: kubernetes.io/arch
+    operator: In
+    values:
+    - amd64
+  taints:
+  - effect: NoSchedule
+    key: simple
+    value: "true"
+  ttlSecondsAfterEmpty: 30
+  ttlSecondsUntilExpired: 172800
