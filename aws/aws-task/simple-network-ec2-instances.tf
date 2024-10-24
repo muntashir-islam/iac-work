@@ -327,6 +327,40 @@ resource "aws_instance" "bastion_host" {
   }
 }
 
+
+# Create an SNS Topic
+resource "aws_sns_topic" "cpu_alarm_topic" {
+  name = "cpu-alarm-topic"
+}
+
+# Subscribe an Email to the SNS Topic
+resource "aws_sns_topic_subscription" "email_subscription" {
+  topic_arn = aws_sns_topic.cpu_alarm_topic.arn
+  protocol  = "email"
+  endpoint  = "email@xxx"  # Replace with email address
+}
+
+# CloudWatch Alarm for CPU Utilization > 70%
+resource "aws_cloudwatch_metric_alarm" "cpu_high_alarm" {
+  alarm_name          = "High-CPU-Usage-Alarm"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 300  # Period in seconds (5 minutes)
+  statistic           = "Average"
+  threshold           = 70
+  alarm_description   = "This alarm triggers when the average CPU utilization is greater than 70% for two consecutive periods."
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.app_asg.name
+  }
+  alarm_actions       = [aws_sns_topic.cpu_alarm_topic.arn]
+
+  tags = {
+    Name = "cpu_high_alarm"
+  }
+}
+
 # Output SSH command for Bastion Host
 output "bastion_ssh_command" {
   value = "ssh -i ${local_file.private_key.filename} ec2-user@${aws_instance.bastion_host.public_ip}"
