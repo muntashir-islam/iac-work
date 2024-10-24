@@ -169,17 +169,97 @@ resource "aws_instance" "bastion_host" {
   }
 }
 
-# App Server in Private Subnet
-resource "aws_instance" "app_server" {
-  ami           = "ami-0c55b159cbfafe1f0" # Replace with your desired AMI ID
+# # App Server in Private Subnet
+# resource "aws_instance" "app_server" {
+#   ami           = "ami-0c55b159cbfafe1f0" # Replace with your desired AMI ID
+#   instance_type = "t2.micro"
+#   subnet_id     = aws_subnet.subnets["private"].id
+#   key_name      = tls_private_key.ssh_key.key_name
+
+#   security_groups = [aws_security_group.app_sg.id]
+
+#   tags = {
+#     Name = "app_server"
+#   }
+
+#   provisioner "local-exec" {
+#     command = "chmod 400 ${local_file.private_key.filename}"
+#   }
+# }
+
+# Launch Template for App Server
+resource "aws_launch_template" "app_launch_template" {
+  name_prefix   = "app-launch-template-"
+  image_id      = "ami-0c55b159cbfafe1f0" # Replace with your desired AMI ID
   instance_type = "t2.micro"
-  subnet_id     = aws_subnet.subnets["private"].id
   key_name      = tls_private_key.ssh_key.key_name
 
-  security_groups = [aws_security_group.app_sg.id]
+  network_interfaces {
+    associate_public_ip_address = false
+    subnet_id                   = aws_subnet.subnets["private"].id
+    security_groups             = [aws_security_group.app_sg.id]
+  }
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size = 8
+    }
+  }
+
+  user_data = <<-EOF
+              #!/bin/bash
+              yum update -y
+              yum install -y nginx
+              systemctl start nginx
+              systemctl enable nginx
+              EOF
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "app_server"
+    }
+  }
+}
+
+# Auto Scaling Group for App Server
+resource "aws_autoscaling_group" "app_asg" {
+  desired_capacity     = 2
+  max_size             = 5
+  min_size             = 2
+  launch_template {
+    id      = aws_launch_template.app_launch_template.id
+    version = "$Latest"
+  }
+
+  vpc_zone_identifier = [aws_subnet.subnets["private"].id]
+
+  tag {
+    key                 = "Name"
+    value               = "app_server"
+    propagate_at_launch = true
+  }
+
+  health_check_type         = "EC2"
+  health_check_grace_period = 300
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# Bastion Host in Public Subnet
+resource "aws_instance" "bastion_host" {
+  ami           = "ami-0c55b159cbfafe1f0" # Replace with your desired AMI ID
+  instance_type = "t2.micro"
+  subnet_id     = aws_subnet.subnets["public"].id
+  key_name      = tls_private_key.ssh_key.key_name
+
+  security_groups = [aws_security_group.bastion_sg.id]
 
   tags = {
-    Name = "app_server"
+    Name = "bastion_host"
   }
 
   provisioner "local-exec" {
@@ -194,5 +274,5 @@ output "bastion_ssh_command" {
 
 # Output SSH command for App Server (via Bastion Host)
 output "app_ssh_command" {
-  value = "ssh -i ${local_file.private_key.filename} -o ProxyCommand='ssh -W %h:%p -i ${local_file.private_key.filename} ec2-user@${aws_instance.bastion_host.public_ip}' ec2-user@${aws_instance.app_server.private_ip}"
+  value = "ssh -i ${local_file.private_key.filename} -o ProxyCommand='ssh -W %h:%p -i ${local_file.private_key.filename} ec2-user@${aws_instance.bastion_host.public_ip}' ec2-user@${aws_launch_template.app_launch_template.private_ip}"
 }
