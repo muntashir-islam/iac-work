@@ -151,23 +151,6 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-# Bastion Host in Public Subnet
-resource "aws_instance" "bastion_host" {
-  ami           = "ami-0c55b159cbfafe1f0" # Replace with your desired AMI ID
-  instance_type = "t2.micro"
-  subnet_id     = aws_subnet.subnets["public"].id
-  key_name      = tls_private_key.ssh_key.key_name
-
-  security_groups = [aws_security_group.bastion_sg.id]
-
-  tags = {
-    Name = "bastion_host"
-  }
-
-  provisioner "local-exec" {
-    command = "chmod 400 ${local_file.private_key.filename}"
-  }
-}
 
 # # App Server in Private Subnet
 # resource "aws_instance" "app_server" {
