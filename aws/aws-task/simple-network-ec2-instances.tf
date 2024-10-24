@@ -232,6 +232,83 @@ resource "aws_autoscaling_group" "app_asg" {
   }
 }
 
+# Security Group for Load Balancer
+resource "aws_security_group" "lb_sg" {
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "lb_sg"
+  }
+}
+
+# Application Load Balancer
+resource "aws_lb" "app_lb" {
+  name               = "app-lb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.lb_sg.id]
+  subnets            = [aws_subnet.subnets["public"].id]
+
+  enable_deletion_protection = false
+
+  tags = {
+    Name = "app_lb"
+  }
+}
+
+# Target Group for Nginx on Port 80
+resource "aws_lb_target_group" "app_tg" {
+  name     = "app-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    path                = "/"
+    interval            = 30
+    timeout             = 5
+    healthy_threshold   = 5
+    unhealthy_threshold = 2
+    matcher             = "200"
+  }
+
+  tags = {
+    Name = "app_tg"
+  }
+}
+
+# Listener for Load Balancer on Port 80
+resource "aws_lb_listener" "app_lb_listener" {
+  load_balancer_arn = aws_lb.app_lb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_tg.arn
+  }
+}
+
+# Attach Auto Scaling Group to Load Balancer Target Group
+resource "aws_autoscaling_attachment" "asg_attachment" {
+  autoscaling_group_name = aws_autoscaling_group.app_asg.name
+  lb_target_group_arn    = aws_lb_target_group.app_tg.arn
+}
+
 # Bastion Host in Public Subnet
 resource "aws_instance" "bastion_host" {
   ami           = "ami-0c55b159cbfafe1f0" # Replace with your desired AMI ID
